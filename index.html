@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>売上見込 転記ツール</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif;
+    margin: 0; background: #f4f6f9; color: #333;
+  }
+  /* ---------- 店舗タブ ---------- */
+  .tabs {
+    display: flex; background: #0b4da3; overflow-x: auto;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .tabs button {
+    flex: 1 0 auto; padding: 11px 18px; border: none; cursor: pointer;
+    background: #0b4da3; color: #cfe0ff; font-size: 14px; font-weight: 600;
+    border-right: 1px solid rgba(255,255,255,.15); white-space: nowrap;
+  }
+  .tabs button:hover { background: #1257b5; }
+  .tabs button.active { background: #1a73e8; color: #fff; }
+  /* ---------- 上部バー ---------- */
+  .topbar {
+    position: sticky; top: 42px; z-index: 15;
+    background: #1a73e8; color: #fff;
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    box-shadow: 0 2px 6px rgba(0,0,0,.2);
+  }
+  select {
+    padding: 9px 12px; font-size: 15px; border-radius: 6px;
+    border: 1px solid #ccc; background: #fff; color: #333; min-width: 110px;
+  }
+  .btn-tenki, .btn-tenki-all {
+    padding: 9px 22px; font-size: 15px; font-weight: 600;
+    border: none; border-radius: 6px; cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  }
+  .btn-tenki { background: #ffb300; color: #4a3200; }
+  .btn-tenki:hover { background: #ffc533; }
+  .btn-tenki-all { background: #34a853; color: #fff; }
+  .btn-tenki-all:hover { background: #46c266; }
+  .btn-tenki:disabled, .btn-tenki-all:disabled { background: #e0e0e0; color: #999; cursor: wait; }
+  #status { font-size: 14px; font-weight: 600; margin-left: auto; max-width: 55%; }
+  #status.ok { color: #d7ffd9; }
+  #status.err { color: #ffcdd2; }
+  /* ---------- コンテンツ ---------- */
+  .container { padding: 16px; }
+  .card {
+    background: #fff; border-radius: 10px; overflow: auto;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12); margin-bottom: 20px;
+  }
+  .card-head {
+    padding: 12px 16px; font-size: 15px; font-weight: 600;
+    border-bottom: 1px solid #eee; background: #fafbfc;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .card-head .reload { font-size: 13px; cursor: pointer; }
+  .chk-count { font-size: 13px; font-weight: 600; color: #1e7e34; }
+  /* ---------- 目標バー ---------- */
+  .goal-bar {
+    padding: 14px 16px; background: linear-gradient(90deg, #1a73e8, #4d9cf8);
+    color: #fff; display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+  }
+  .goal-bar .label { font-size: 13px; opacity: .85; }
+  .goal-bar .val { font-size: 26px; font-weight: 700; letter-spacing: .5px; }
+  .goal-bar .sub { font-size: 12px; opacity: .8; }
+  .goal-sep { width: 1px; height: 40px; background: rgba(255,255,255,.35); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; white-space: nowrap; }
+  th, td { border: 1px solid #e3e6ea; padding: 6px 10px; text-align: right; }
+  th { background: #f0f3f7; font-weight: 600; text-align: center; position: sticky; top: 0; }
+  td:nth-child(-n+5), th:nth-child(-n+5) { text-align: left; }
+  td.chk, th.chk { text-align: center; }
+  tr:hover td { background: #fffbe6; }
+  .highlight td { background: #fff3cd !important; font-weight: 600; }
+  .done-row td { color: #999; }
+  .badge-done { display:inline-block; background:#e6f4ea; color:#1e7e34; border-radius:10px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .badge-todo { display:inline-block; background:#fff3cd; color:#856404; border-radius:10px; padding:1px 8px; font-size:12px; font-weight:600; }
+  .note { font-size: 12px; color: #777; padding: 8px 16px; }
+</style>
+</head>
+<body>
+
+<!-- ===== 店舗タブ ===== -->
+<div class="tabs" id="tabBar"></div>
+
+<!-- ===== 上部バー：時刻プルダウン ＋ 転記ボタン ＋ 一括転記 ===== -->
+<div class="topbar">
+  <span style="background:rgba(255,255,255,.2);border-radius:4px;padding:2px 8px;font-size:12px;">v3.2</span>
+  <select id="timeSelect"></select>
+  <button id="btnTenki" class="btn-tenki">転記</button>
+  <button id="btnTenkiAll" class="btn-tenki-all">チェックした行をすべて転記</button>
+  <span id="status"></span>
+</div>
+
+<div class="container">
+  <!-- ===== 各店の目標（dタブ参照） ===== -->
+  <div class="card">
+    <div class="goal-bar" id="goalBar">読み込み中…</div>
+  </div>
+
+  <div class="card">
+    <div class="card-head">
+      <span id="cardTitle">ラップ集計（店舗）</span>
+      <span id="chkCount" class="chk-count"></span>
+      <span class="reload" onclick="loadData()">🔄 再読込</span>
+    </div>
+    <div id="tableArea" class="note">読み込み中…</div>
+  </div>
+  <div class="note">
+    ※ <b>未転記の行は自動的にチェックが入ります</b>（転記済みの行はチェック解除）。<br>
+    ※ 「転記」ボタン：選択した時刻の <b>売上見込金額 → 転記先シートのG列</b>、<b>累計客数 → L列</b> に書き込みます（11:00→13行目 〜 5:00→31行目・全タブ共通）。<br>
+    ※ 「チェックした行をすべて転記」ボタン：チェックが入った行をまとめて、そのタブの転記先シートへ転記します。
+  </div>
+</div>
+
+<script>
+  // 店舗タブ定義（Code.gs の TABS と同じ並び）
+  var TABS = [
+    { tab: '73',  label: '73 三条河原町店' },
+    { tab: '53',  label: '53 四条河原町店' },
+    { tab: '104', label: '104 河原町本店' },
+    { tab: '105', label: '105 SJK河原町本店' },
+    { tab: '248', label: '248 近江屋店' },
+    { tab: '267', label: '267 木屋町店' }
+  ];
+
+  var TIMES = ['6:00','7:00','8:00','9:00','10:00','11:00','12:00','13:00','14:00','15:00',
+               '16:00','17:00','18:00','19:00','20:00','21:00','22:00','23:00',
+               '0:00','1:00','2:00','3:00','4:00','5:00'];
+  var TENKI_TIMES = ['11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00',
+                     '20:00','21:00','22:00','23:00','0:00','1:00','2:00','3:00','4:00','5:00'];
+
+  var currentTab = TABS[0].tab;
+
+  // ---------- タブバー生成 ----------
+  (function initTabs() {
+    var bar = document.getElementById('tabBar');
+    bar.innerHTML = TABS.map(function(t) {
+      return '<button data-tab="' + t.tab + '">' + t.label + '</button>';
+    }).join('');
+    bar.querySelectorAll('button').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        currentTab = btn.getAttribute('data-tab');
+        bar.querySelectorAll('button').forEach(function(b) { b.classList.remove('active'); });
+        btn.classList.add('active');
+        loadData();
+      });
+    });
+    bar.querySelector('button').classList.add('active');
+  })();
+
+  // ---------- プルダウン初期化 ----------
+  (function initSelect() {
+    var sel = document.getElementById('timeSelect');
+    sel.innerHTML = TIMES.map(function(t) {
+      var label = TENKI_TIMES.indexOf(t) >= 0 ? t : t + '（転記対象外）';
+      return '<option value="' + t + '">' + label + '</option>';
+    }).join('');
+    sel.value = '11:00';
+  })();
+
+  function esc(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmt(n) {
+    return Number(n).toLocaleString('ja-JP');
+  }
+
+  // ---------- 目標バー描画 ----------
+  function renderGoal(data) {
+    var bar = document.getElementById('goalBar');
+    if (data.error) { bar.textContent = '⚠️ ' + data.error; return; }
+    var goal = data.goal;
+    var html = '<div><div class="label">🏷 ' + esc(data.storeName || data.tab) + '　本日の売上目標（dタブ参照）</div>'
+             + '<div class="val">' + (goal !== null ? '¥ ' + fmt(goal) : '未設定') + '</div></div>';
+    if (data.latest) {
+      var rate = (goal && goal > 0) ? Math.round(data.latest.sales / goal * 1000) / 10 : null;
+      html += '<div class="goal-sep"></div>'
+            + '<div><div class="label">現在値（' + esc(data.latest.time) + '時点）</div>'
+            + '<div class="val">¥ ' + fmt(data.latest.sales) + '</div>'
+            + (rate !== null ? '<div class="sub">達成率 ' + rate + '%</div>' : '')
+            + '</div>'
+            + '<div class="goal-sep"></div>'
+            + '<div><div class="label">累計客数（' + esc(data.latest.time) + '時点）</div>'
+            + '<div class="val">' + fmt(data.latest.customers) + '<span style="font-size:14px;"> 名</span></div></div>';
+    }
+    bar.innerHTML = html;
+  }
+
+  // ---------- テーブル描画（# の右に「転記状態」列） ----------
+  function renderTable(data) {
+    var area = document.getElementById('tableArea');
+    document.getElementById('cardTitle').textContent =
+      'ラップ集計（店舗）　タブ「' + data.tab + '」　A5:Q30 のデータ';
+    if (data.error) {
+      area.innerHTML = '⚠️ ' + esc(data.error);
+      area.className = 'note';
+      updateChkCount();
+      return;
+    }
+    if (!data.rows || !data.rows.length) {
+      area.innerHTML = 'データがありません';
+      area.className = 'note';
+      updateChkCount();
+      return;
+    }
+    var html = '<table><thead><tr><th>#</th><th class="chk">転記状態</th>';
+    data.headers.forEach(function(h) { html += '<th>' + esc(h) + '</th>'; });
+    html += '</tr></thead><tbody>';
+    data.rows.forEach(function(row) {
+      var done = !!row.done;
+      var cls = done ? 'done-row' : '';
+      html += '<tr data-key="' + esc(row.key) + '" data-time="' + esc(row.time) + '" class="' + cls + '">';
+      html += '<td>' + row.rowNo + '</td>';
+      html += '<td class="chk">'
+            + (done ? '<span class="badge-done">転記済</span>' : '<span class="badge-todo">未転記</span>')
+            + '<br>'
+            + (row.tenkiable
+               ? '<input type="checkbox" class="rowchk" data-key="' + esc(row.key) + '"' + (done ? '' : ' checked') + '>'
+               : '<span style="color:#bbb;">対象外</span>')
+            + '</td>';
+      row.cells.forEach(function(cell) { html += '<td>' + esc(cell) + '</td>'; });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.className = '';
+
+    document.querySelectorAll('.rowchk').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        cb.closest('tr').classList.toggle('highlight', cb.checked);
+        updateChkCount();
+      });
+      cb.closest('tr').classList.toggle('highlight', cb.checked);
+    });
+    updateChkCount();
+    highlightSelected();
+  }
+
+  function updateChkCount() {
+    var cbs = document.querySelectorAll('.rowchk:checked');
+    document.getElementById('chkCount').textContent = '☑ 選択: ' + cbs.length + '件';
+  }
+
+  function highlightSelected() {
+    var t = document.getElementById('timeSelect').value;
+    document.querySelectorAll('#tableArea tr[data-time]').forEach(function(tr) {
+      var cb = tr.querySelector('.rowchk');
+      if (!cb || !cb.checked) tr.classList.remove('highlight');
+      if (tr.getAttribute('data-time') === t && (!cb || !cb.checked)) tr.classList.add('highlight');
+    });
+  }
+
+  document.getElementById('timeSelect').addEventListener('change', highlightSelected);
+
+  // ---------- 単一時刻の転記 ----------
+  document.getElementById('btnTenki').addEventListener('click', function() {
+    runServer('tenki', [currentTab, document.getElementById('timeSelect').value]);
+  });
+
+  // ---------- チェックした行をすべて転記 ----------
+  document.getElementById('btnTenkiAll').addEventListener('click', function() {
+    var keys = Array.prototype.map.call(document.querySelectorAll('.rowchk:checked'), function(cb) {
+      return cb.getAttribute('data-key');
+    });
+    var s = document.getElementById('status');
+    if (!keys.length) {
+      s.className = 'err';
+      s.textContent = '⚠️ チェックされた行がありません';
+      return;
+    }
+    runServer('tenkiAll', [currentTab, keys]);
+  });
+
+  // 共通：サーバー呼び出し → 結果表示 → 再読込
+  function runServer(fnName, args) {
+    var status = document.getElementById('status');
+    var btnTenki = document.getElementById('btnTenki');
+    var btnAll = document.getElementById('btnTenkiAll');
+    btnTenki.disabled = true; btnAll.disabled = true;
+    status.className = '';
+    status.textContent = '処理中…';
+
+    google.script.run
+      .withSuccessHandler(function(res) {
+        btnTenki.disabled = false; btnAll.disabled = false;
+        status.className = res.ok ? 'ok' : 'err';
+        var msg = res.message;
+        if (res.results && res.results.length) {
+          var lines = res.results.filter(function(r) { return r.status !== 'ok'; })
+                                 .map(function(r) { return r.status === 'skip' ? '⏭ ' + r.message : '❌ ' + r.message; });
+          if (lines.length) msg += '　' + lines.join(' ／ ');
+        }
+        status.textContent = msg;
+        showSheetLink();
+        loadData();
+      })
+      .withFailureHandler(function(err) {
+        btnTenki.disabled = false; btnAll.disabled = false;
+        status.className = 'err';
+        status.textContent = '❌ エラー: ' + err.message;
+      })
+      [fnName].apply(null, args);
+  }
+
+  function showSheetLink() {
+    var status = document.getElementById('status');
+    status.innerHTML += ' <a href="https://docs.google.com/spreadsheets/d/1JG7COuIVeuFABl6xYZCeL2F2pfbaU1i8hx1EZfHhMVo/edit" target="_blank" style="color:#fff;text-decoration:underline;">転記先を開く</a>';
+  }
+
+  // データ読み込み（現在のタブ）
+  function loadData() {
+    document.getElementById('tableArea').innerHTML = '読み込み中…';
+    document.getElementById('tableArea').className = 'note';
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (!data) {
+          document.getElementById('tableArea').innerHTML = '⚠️ サーバーから応答がありません（Code.gsとindex.htmlのバージョン不一致の可能性）';
+          return;
+        }
+        if (data.error) {
+          document.getElementById('tableArea').innerHTML = '⚠️ ' + esc(data.error);
+          document.getElementById('tableArea').className = 'note';
+          return;
+        }
+        renderGoal(data);
+        renderTable(data);
+      })
+      .withFailureHandler(function(err) {
+        document.getElementById('tableArea').innerHTML =
+          '⚠️ 読み込みエラー: ' + esc(String(err && err.message ? err.message : err)) +
+          '<br>※ F12でコンソールを開くと詳細が表示されます。Code.gsを新しいバージョンで再デプロイしたか確認してください。';
+      })
+      .getStoreData(currentTab);
+  }
+  loadData();
+</script>
+</body>
+</html>
